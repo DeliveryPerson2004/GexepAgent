@@ -15,6 +15,23 @@ import {
     selectMessageFromMessageTableStmt, selectNameFromAgentTableStmt
 } from "../../database/stmt.ts";
 
+export type AgentEvent =
+    | {type: "start"; agentName: string}
+    | {type: "reasoning"; text: string}
+    | {type: "message"; text: string}
+    | {type: "function_call"; name: string}
+    | {type: "function_result"; name: string; output: string}
+    | {type: "web_search"}
+    | {type: "complete"; agentName: string}
+    | {type: "error"; error: Error};
+
+export interface ConversationMessage {
+    role: "user" | "assistant";
+    text: string;
+}
+
+export type AgentEventListener = (event: AgentEvent) => void;
+
 
 
 export abstract class BaseAgent{
@@ -22,6 +39,7 @@ export abstract class BaseAgent{
     private readonly instructions: string;
     private readonly model: ModelType;
     private modelClient: ModelClient;
+    private eventListener: AgentEventListener | undefined;
 
     protected readonly agentId: number;
     protected readonly agentName: string;
@@ -61,6 +79,55 @@ export abstract class BaseAgent{
         logger.info("new class BaseAgent()");
     }
 
+    public setEventListener(listener: AgentEventListener | undefined): void {
+        this.eventListener = listener;
+    }
+
+    public getConversationHistory(): ConversationMessage[] {
+        const messages: ConversationMessage[] = [];
+
+        for (const rawItem of this.input as unknown[]) {
+            if (typeof rawItem !== "object" || rawItem === null) {
+                continue;
+            }
+
+            const item = rawItem as Record<string, unknown>;
+            if (item.type !== "message" || (item.role !== "user" && item.role !== "assistant")) {
+                continue;
+            }
+
+            if (typeof item.content === "string") {
+                messages.push({role: item.role, text: item.content});
+                continue;
+            }
+
+            if (!Array.isArray(item.content)) {
+                continue;
+            }
+
+            const text = item.content
+                .map((contentItem: unknown) => {
+                    if (typeof contentItem !== "object" || contentItem === null) {
+                        return "";
+                    }
+                    const content = contentItem as Record<string, unknown>;
+                    return typeof content.text === "string" ? content.text : "";
+                })
+                .filter(Boolean)
+                .join("\n");
+
+            if (text) {
+                messages.push({role: item.role, text});
+            }
+        }
+
+        return messages;
+    }
+
+    private emit(event: AgentEvent): void {
+        this.eventListener?.(event);
+    }
+
     private createInputMessageItemAndPush(userInput: string) {
         const inputMessageItem: InputMessageItem = {
             type: "message",
@@ -84,54 +151,74 @@ export abstract class BaseAgent{
         };
 
         this.input.push(functionCallOutputItem);
+        this.emit({type: "function_result", name: inputFunctionCallItem.name, output});
     }
 
-    public async ask(userInput: string){
+    public async ask(userInput: string): Promise<string> {
         logger.info("class BaseAgent public loop() start");
 
         const inputLengthBeforeLoop = this.input.length;
+        const answerParts: string[] = [];
 
         this.createInputMessageItemAndPush(userInput);
+        this.emit({type: "start", agentName: this.agentName});
 
-        while(true){
-            const response: ResponseSchema = await this.modelClient.requestResponsesAPI(
-                this.model,
-                this.input,
-                this.instructions,
-                this.functionTools,
-                this.agentName,
-            )
+        try {
+            while(true){
+                const response: ResponseSchema = await this.modelClient.requestResponsesAPI(
+                    this.model,
+                    this.input,
+                    this.instructions,
+                    this.functionTools,
+                    this.agentName,
+                );
 
-            let hasFunctionCall = false;
-            for(const item of response.output){
-                this.input.push(item);
-                if(item.type == "message"){
-                    logger.info(item.type);
-                    for(const contentItem of item.content){
-                        logger.info("\n" + contentItem.text);
+                if (!Array.isArray(response.output)) {
+                    throw new Error("模型响应中缺少 output 数组。");
+                }
+
+                let hasFunctionCall = false;
+                for(const item of response.output){
+                    this.input.push(item);
+                    if(item.type == "message"){
+                        logger.info(item.type);
+                        for(const contentItem of item.content){
+                            logger.info("\n" + contentItem.text);
+                            answerParts.push(contentItem.text);
+                            this.emit({type: "message", text: contentItem.text});
+                        }
+                    }else if(item.type == "reasoning"){
+                        logger.info(item.type);
+                        for(const contentItem of item.content){
+                            logger.info("\n" + contentItem.text);
+                            this.emit({type: "reasoning", text: contentItem.text});
+                        }
+                    }else if(item.type == "function_call"){
+                        logger.info(item.type);
+                        this.emit({type: "function_call", name: item.name});
+                        await this.requestFunctionCall(item);
+                        hasFunctionCall = true;
+                    }else if(item.type == "web_search_call"){
+                        logger.info(item.type);
+                        this.emit({type: "web_search"});
                     }
-                }else if(item.type == "reasoning"){
-                    logger.info(item.type);
-                    for(const contentItem of item.content){
-                        logger.info("\n" + contentItem.text);
-                    }
-                }else if(item.type == "function_call"){
-                    logger.info(item.type);
-                    await this.requestFunctionCall(item);
-                    hasFunctionCall = true;
-                }else if(item.type == "web_search_call"){
-                    logger.info(item.type);
+                }
+                if(!hasFunctionCall){
+                    break;
                 }
             }
-            if(!hasFunctionCall){
-                break;
-            }
+
+            const inputDeltaAfterLoop = this.input.slice(inputLengthBeforeLoop);
+
+            insertIntoMessageTableStmt.run(this.agentId, this.maxTurn, JSON.stringify(inputDeltaAfterLoop), 1);
+
+            logger.info("class BaseAgent public loop() end");
+            this.emit({type: "complete", agentName: this.agentName});
+            return answerParts.join("\n\n");
+        } catch (error) {
+            const normalizedError = error instanceof Error ? error : new Error(String(error));
+            this.emit({type: "error", error: normalizedError});
+            throw normalizedError;
         }
-
-        const inputDeltaAfterLoop = this.input.slice(inputLengthBeforeLoop);
-
-        insertIntoMessageTableStmt.run(this.agentId, this.maxTurn, JSON.stringify(inputDeltaAfterLoop), 1);
-
-        logger.info("class BaseAgent public loop() end");
     }
 }

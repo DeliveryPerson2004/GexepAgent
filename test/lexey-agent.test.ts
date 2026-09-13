@@ -9,6 +9,7 @@ import type {
     InputItemType,
     InputMessageItem,
 } from "../src/backend/DeepSeek/API/responses.ts";
+import type {AgentEvent} from "../src/backend/DeepSeek/Agents/BaseAgent.ts";
 
 
 const SKILL_NAME = "从英语单词引申到外国名著片段";
@@ -192,9 +193,16 @@ describe("LexeyAgent.ask() 全链路", () => {
         });
 
         const agent = new TestableLexeyAgent();
-        await agent.ask("测试输入");
+        const events: AgentEvent[] = [];
+        agent.setEventListener((event) => events.push(event));
+        const answer = await agent.ask("测试输入");
 
         assert.equal(fetchMock.mock.callCount(), 2);
+        assert.equal(answer, "done");
+        assert.deepEqual(
+            events.map((event) => event.type),
+            ["start", "function_call", "function_result", "message", "complete"],
+        );
 
         const input = agent.getInput();
         const outputItems = input.filter(isFunctionCallOutputItem);
@@ -207,5 +215,9 @@ describe("LexeyAgent.ask() 全链路", () => {
         const delta = JSON.parse(lastRow.content) as InputItemType[];
         assert.ok(delta.some((item) => isMessageItem(item) && item.content === "测试输入"));
         assert.ok(delta.some(isFunctionCallOutputItem));
+
+        const conversation = agent.getConversationHistory();
+        assert.ok(conversation.some((message) => message.role === "user" && message.text === "测试输入"));
+        assert.ok(conversation.some((message) => message.role === "assistant" && message.text === "done"));
     });
 });

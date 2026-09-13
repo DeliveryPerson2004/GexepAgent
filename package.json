@@ -12,6 +12,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
@@ -24,6 +27,7 @@
     "#base-agent": "./src/backend/DeepSeek/Agents/BaseAgent.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-tui": "^0.85.1",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^17.4.2",
     "e2b": "^2.49.0",

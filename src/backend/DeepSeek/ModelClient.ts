@@ -1,12 +1,12 @@
 import "dotenv/config";
-import type {InputType, ModelType, RequestBody, ToolsType} from "./API/responses.ts";
+import type {InputType, ModelType, RequestBody, ResponseSchema, ToolsType} from "./API/responses.ts";
 import {logger} from "../logger.ts";
 
 
 
 export class ModelClient {
-    private API_KEY = process.env.DEEPSEEK_API_KEY;
-    private baseURL: string = "https://api.deepseek.com";
+    private readonly apiKey = process.env.DEEPSEEK_API_KEY;
+    private readonly baseURL = "https://api.deepseek.com";
 
     constructor() {
         logger.info("new class ModelClient()");
@@ -18,7 +18,11 @@ export class ModelClient {
         instructions: string,
         tools: ToolsType,
         user: string,
-    ){
+    ): Promise<ResponseSchema> {
+        if (!this.apiKey) {
+            throw new Error("未配置 DEEPSEEK_API_KEY，请先在 .env 中填写后再发送消息。");
+        }
+
         const endPoint = "/responses";
 
         const requestBody: RequestBody = {
@@ -37,12 +41,38 @@ export class ModelClient {
                 headers: {
                     "Content-Type": "application/json",
                     "Accept": "application/json",
-                    "Authorization": `Bearer ${this.API_KEY}` // 此处传入实际的 API Token
+                    "Authorization": `Bearer ${this.apiKey}`,
                 },
                 body: requestBodyString,
             }
         );
 
-        return await response.json();
+        const responseBody: unknown = await response.json();
+        if (!response.ok) {
+            throw new Error(`DeepSeek 请求失败（HTTP ${response.status}）：${this.getErrorMessage(responseBody)}`);
+        }
+
+        return responseBody as ResponseSchema;
+    }
+
+    private getErrorMessage(responseBody: unknown): string {
+        if (typeof responseBody !== "object" || responseBody === null) {
+            return "服务未返回可读的错误信息";
+        }
+
+        const body = responseBody as Record<string, unknown>;
+        if (typeof body.message === "string") {
+            return body.message;
+        }
+        if (typeof body.error === "string") {
+            return body.error;
+        }
+        if (typeof body.error === "object" && body.error !== null) {
+            const error = body.error as Record<string, unknown>;
+            if (typeof error.message === "string") {
+                return error.message;
+            }
+        }
+        return "服务未返回可读的错误信息";
     }
 }
