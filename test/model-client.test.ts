@@ -116,6 +116,22 @@ describe("ModelClient", () => {
         assert.deepEqual(result, fakeResponse);
     });
 
+    it("HTTP 错误会抛出可读的服务端信息", async () => {
+        mock.restoreAll();
+        mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+            error: {message: "invalid api key"},
+        }), {
+            status: 401,
+            headers: {"Content-Type": "application/json"},
+        }));
+
+        const client = new ModelClient();
+        await assert.rejects(
+            client.requestResponsesAPI(ModelType.DeepSeekFlash, [], "instructions", [], "test_user"),
+            /HTTP 401.*invalid api key/,
+        );
+    });
+
     it("ModelType.DeepSeekFlash 的值为 deepseek-flash", () => {
         assert.equal(ModelType.DeepSeekFlash, "deepseek-flash");
     });

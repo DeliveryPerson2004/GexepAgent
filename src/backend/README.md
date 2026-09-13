@@ -13,6 +13,7 @@
 | 模型接口 | DeepSeek `/responses`、原生 `fetch` | 保留 provider 特有的请求字段和输出项，不依赖模型 SDK |
 | 参数校验 | Zod | 在运行时校验 function tool 的入参 |
 | 持久化 | better-sqlite3 | 以单文件 `database.db` 保存 Agent 与消息历史 |
+| 终端界面 | pi-tui | 全屏对话、Markdown 渲染、角色切换、滚动与输入补全 |
 | 沙箱 | E2B | 为 Jezeh 提供网络隔离的备忘录工作区 |
 | 邮件 | Nodemailer | 由 Gexep 通过固定 QQ SMTP 配置发送邮件 |
 | 日志与测试 | Pino、`node:test` | 统一日志和无额外测试框架的自动化测试 |
@@ -45,7 +46,7 @@ src/backend/
 │   ├── initDatabase.ts           # 建表并登记默认 Agent
 │   └── stmt.ts                   # prepared statements
 ├── logger.ts                     # Pino 日志封装
-├── main.ts                       # 预留程序入口
+├── main.ts                       # 初始化 Agent 并启动终端界面
 └── test.ts                       # Jezeh 真实服务链路脚本
 ```
 
@@ -87,6 +88,7 @@ cp .env.example .env
 pnpm dev:backend:initDatabase
 pnpm exec tsc --noEmit
 pnpm test
+pnpm start
 ```
 
 | 环境变量 | 是否必需 | 用途 |
@@ -96,7 +98,7 @@ pnpm test
 | `E2B_API_KEY` | 使用 Jezeh 时必需 | 创建或连接 E2B Sandbox |
 | `E2B_MEMO_SANDBOX_ID` | 可选 | 复用一个仍在运行或已暂停的 Sandbox |
 
-`main.ts` 当前为空，因此 `pnpm start` 和 `pnpm dev:backend:main` 尚不会启动交互式应用；后一个命令仍会先完成类型检查。`src/backend/test.ts` 会访问真实服务并向固定宿主机目录写入备忘录，仅应在配置完整且明确需要端到端验证时手动运行。
+`pnpm start` 会初始化数据库并启动基于 pi-tui 的全屏交互界面；`pnpm dev:backend:main` 会先完成类型检查再启动。界面支持 `/agent <name>`、`/clear`、`/help`、`/quit`，并会按 Agent 恢复各自已激活的历史消息。`src/backend/test.ts` 会访问真实服务并向固定宿主机目录写入备忘录，仅应在配置完整且明确需要端到端验证时手动运行。
 
 ## 6. 自动化测试
 
@@ -119,7 +121,6 @@ pnpm test
 - Gexep 尚未接入 A2A，不能实际发现或调度其他 Agent。
 - MCP 客户端尚未实现，第三方工具仍需以本地 function tool 直接集成。
 - GraphRAG 和跨 Agent 的长期记忆尚未实现；SQLite 历史只用于恢复原始上下文。
-- 尚无 TUI 或其他用户界面，`main.ts` 仍是预留入口。
 - Zebeh 目前只有角色与基础 Agent 实现，专门的测试、审核工具仍待补充。
 
 这些方向背后的判断与预期边界见 [THINKING.md](THINKING.md)，不在本文重复展开。

@@ -16,6 +16,7 @@
 - **按角色分配能力**：Gexep 可向固定邮箱发送邮件，以便主动与我联系，让我离开电脑时也能通过手机查看它想传达的消息；Lexey 负责语言任务，并支持网页搜索和按需加载 Skill；Jezeh 在网络隔离的 E2B Sandbox 中管理 Markdown 备忘录；Zebeh 用于开发阶段的行为验证。
 - **受控工具边界**：工具由具体 Agent 显式注册，入参经 Zod 校验；Jezeh 的命令默认在 E2B 的 `/memos` 中运行，并通过受限下载工具将备忘录导出到固定宿主机目录。
 - **本地会话持久化**：使用 `better-sqlite3` 管理单文件 `database.db`，按 Agent 保存对话历史，并通过激活态控制恢复范围。该状态也为后续长期记忆机制预留：届时可判断哪些短期记忆不应继续占用当前上下文，将其置为非激活态，从而实现上下文管理。
+- **全屏终端界面**：基于 `pi-tui` 提供无闪烁的对话界面、角色切换、Markdown 渲染、滚动搜索、命令补全，以及推理和工具调用状态提示。
 - **轻量工程栈**：TypeScript、ESM、pnpm、tsx 和 Node.js 内置测试框架，不引入模型 SDK 或 ORM。
 
 MCP 客户端、基于 A2A 的 Agent 协作以及 GraphRAG 长期记忆仍处于设计阶段；文档会明确区分已经落地的能力与尚未实现的设想。
@@ -28,23 +29,28 @@ cp .env.example .env
 pnpm dev:backend:initDatabase
 pnpm exec tsc --noEmit
 pnpm test
+pnpm start
 ```
 
 调用模型时需要配置 `DEEPSEEK_API_KEY`。使用 Gexep 的邮件工具还需配置 `SMTP_PASS`；使用 Jezeh 则需配置 `E2B_API_KEY`，也可通过 `E2B_MEMO_SANDBOX_ID` 连接已有 Sandbox。
 
-当前 `src/backend/main.ts` 是预留入口，尚未提供交互界面；`src/backend/test.ts` 是会调用真实 DeepSeek、E2B 和宿主机文件系统的 Jezeh 完整链路脚本，不属于默认测试套件。
+`pnpm start` 会初始化本地数据库并进入全屏终端界面。输入 `/agent Lexey` 等命令可切换角色，`/help` 查看完整帮助，`Ctrl+C` 或 `/quit` 退出。界面依赖 Node.js 22.19 或更高版本。
+
+`src/backend/test.ts` 是会调用真实 DeepSeek、E2B 和宿主机文件系统的 Jezeh 完整链路脚本，不属于默认测试套件。
 
 ## 目录速览
 
 ```text
-src/backend/
-├── DeepSeek/              # 模型客户端、API 类型、Agent Loop 与具体 Agent
-├── E2B/                   # Jezeh 的 Sandbox 创建和复用
-├── Tools/                 # Skill、邮件、E2B Shell 与备忘录下载工具
-├── database/              # SQLite 初始化与 prepared statements
-├── logger.ts              # 统一日志
-├── main.ts                # 预留程序入口
-└── test.ts                # Jezeh 真实链路脚本
+src/
+├── backend/
+│   ├── DeepSeek/          # 模型客户端、API 类型、Agent Loop 与具体 Agent
+│   ├── E2B/               # Jezeh 的 Sandbox 创建和复用
+│   ├── Tools/             # Skill、邮件、E2B Shell 与备忘录下载工具
+│   ├── database/          # SQLite 初始化与 prepared statements
+│   ├── logger.ts          # 统一日志
+│   ├── main.ts            # TUI 程序入口
+│   └── test.ts            # Jezeh 真实链路脚本
+└── ui/                    # pi-tui 界面、主题与交互状态
 
 test/                      # 隔离的自动化测试
 ```

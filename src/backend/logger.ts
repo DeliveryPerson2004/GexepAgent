@@ -1,8 +1,10 @@
-import pino from 'pino';
+import pino from "pino";
 
-export const logger = pino({
-    transport: {
-        target: 'pino-pretty',
-        options: { colorize: true }
-    }
-});
+export const logger = process.env.PANTHEON_TUI === "1"
+    ? pino({level: "silent"})
+    : pino({
+        transport: {
+            target: "pino-pretty",
+            options: {colorize: true},
+        },
+    });
